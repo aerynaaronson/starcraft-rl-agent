@@ -1,0 +1,22 @@
+# Ignore StarCraft II game install
+StarCraft II/
+SC2/
+*/StarCraft II/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Large model files (optional)
+*.pth
+*.ckpt
+
+# Logs & temp
+*.log
+*.jsonl
+
+# Virtual env
+venv/
+.env/
