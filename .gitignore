@@ -1,22 +1,117 @@
-# Ignore StarCraft II game install
-StarCraft II/
-SC2/
-*/StarCraft II/
-
-# Python cache
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
 
-# Large model files (optional)
-*.pth
-*.ckpt
+# C extensions
+*.so
 
-# Logs & temp
-*.log
-*.jsonl
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Virtual env
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Environments
+.env
+.venv
+env/
 venv/
-.env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Model files (large)
+*.pth
+*.pt
+*.ckpt
+checkpoints/
+
+# Training logs and metrics
+*.jsonl
+training_metrics_*.jsonl
+crash_log_*.txt
+
+# Visualization outputs
+training_dashboard.png
+*.png
+!simple64.png
+
+# StarCraft II
+SC2/
+StarCraftII/
+replays/
+*.SC2Replay
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Log files
+*.log
+logs/
+
+# Project-specific exclusions
+valid_actions.txt
+proof_of_concept/
+saved_frames/
+single_client/
+StarCraft II/
+trainig w/
+training_videos/

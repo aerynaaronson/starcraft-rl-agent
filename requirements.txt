@@ -1,3 +1,17 @@
-pysc2>=3.0.0
+# Core ML Framework
+torch>=2.0.0
 numpy>=1.21.0
-matplotlib>=3.4.0
+
+# StarCraft II Environment
+pysc2>=4.0.0
+
+# Visualization
+matplotlib>=3.5.0
+scipy>=1.7.0
+Pillow>=9.0.0
+
+# System Monitoring
+psutil>=5.8.0
+
+# Utilities
+absl-py>=1.0.0

@@ -1,373 +1,315 @@
-# StarCraft II Reinforcement Learning Agent
+# SC2-LSTM-Bot
 
-**LSTM-based RL agent that learns macro strategy from pure win/loss signals — zero hardcoding, emergent behavior.**
+A reinforcement learning bot for StarCraft II using LSTM networks with temporal attention mechanisms. Built with PyTorch and PySC2.
 
-[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![PySC2](https://img.shields.io/badge/PySC2-latest-green.svg)](https://github.com/deepmind/pysc2)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)
+![PySC2](https://img.shields.io/badge/PySC2-4.0+-green.svg)
+![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-## Overview
+## Features
 
-This project explores **pure reinforcement learning** in StarCraft II without relying on hardcoded strategies, build orders, or scripted behaviors. The agent learns Terran macro strategy from scratch using only win/loss outcomes (pure +100/-100 reward, no time penalties or reward shaping).
+- **LSTM with Temporal Attention**: 4-layer LSTM (1024 hidden units) with 8-head attention mechanism for long-term strategic memory
+- **Map-Agnostic Design**: Coordinate transformation system ensures consistent behavior regardless of spawn position
+- **Distributed Training**: 8 parallel workers with centralized GPU server for efficient training
+- **Complete Terran Tech Tree**: 58 discrete actions covering buildings, units, upgrades, and 6 strategic combat macros
+- **PPO Training**: Proximal Policy Optimization with entropy bonus for stable learning
+- **Comprehensive Logging**: Real-time metrics tracking with visualization dashboard
 
-Starting with random actions, the agent discovers:
-- Economic expansion patterns
-- Tech tree progression (Marines → Factory → Starport → Battlecruisers)
-- Building placement strategies  
-- Multiple winning strategies (fast timing attacks AND late-game compositions)
-- Redundant base construction for economic resilience
-
-**Current Performance:** 40%+ winrate against Very Easy AI after 252 episodes, still climbing.
-
----
-
-## Key Features
-
-### 🧠 LSTM-Based Policy Network
-- Maintains memory across game timesteps (unlike feedforward networks)
-- Learns temporal dependencies: "I built a barracks 2 minutes ago, now I should make marines"
-- 128 hidden units with proper forget/input/output gates
-- Learns coordinate mapping for building placement per action type
-
-### 🎯 Dynamic Legal Action System (**Key Innovation**)
-The biggest challenge in SC2 RL is the massive action space. This system solves it elegantly:
-
-- **Function availability checker** gates actions based on:
-  - Current resources (minerals, vespene)
-  - Tech requirements (e.g., Factory requires Barracks)
-  - Unit existence (can't train marines without a Barracks)
-  - Supply availability
-  
-- Network only sees **valid actions at each timestep**
-- Prevents wasted exploration on impossible actions
-- Action space grows naturally as tech tree is unlocked
-
-Example: Early game the network can only choose from `[train_scv, build_supply_depot, build_barracks]`. After building a Factory, `[train_hellion, train_siege_tank, build_armory]` become available.
-
-### 🎮 Game State Perception Module
-Extracts 35-dimensional state vector including:
-- Economy: minerals, vespene, supply used/cap
-- Units: SCVs, marines, marauders, factory units, starport units, battlecruisers
-- Buildings: command centers, production facilities, tech structures, add-ons
-- Tech status: techlabs, reactors, armories, fusion cores
-
-### 📊 Comprehensive Metrics & Visualization
-- **Real-time logging:** Every action, building placement, economy snapshot
-- **Matplotlib dashboards:** 
-  - Rolling winrate curves
-  - Win vs loss comparisons (unit counts, building counts, game length)
-  - Building placement heatmaps
-  - Economy progression over time
-  - Action distribution analysis
-- Saves to `.jsonl` format for easy post-analysis
-
-### 🚀 Emergent Behaviors Observed
-
-**After 252 episodes, the agent has discovered TWO distinct strategies:**
-
-#### Strategy 1: Fast Timing Attack (Primary, ~90% of wins)
-- **Radical expansion:** Consistently builds 2-3+ command centers
-- **Relentless aggression:** Attacks early and maintains pressure
-- **Backup bases:** Accidentally achieves redundancy by over-expanding
-- **Tech progression:** Reliably reaches Factory + TechLab
-- **Composition:** Marine/Hellion/Siege Tank
-- **Game length:** 1200-2200 steps
-- **Fastest win recorded:** 1193 steps (Episode 166)
-
-#### Strategy 2: Late Game Air Superiority (Emerging, ~10% of wins)
-- **Full tech tree:** Factory → Starport → Fusion Core
-- **Advanced units:** Thors AND Battlecruisers
-- **Extended economy:** Multi-base operation
-- **Game length:** 3000-3500 steps
-- **First observed:** Episode 250
-
-**Key Finding:** Agent discovers strategic diversity despite no explicit reward for tech advancement. Both strategies achieve +100 reward, proving the system can learn multiple paths to victory.
-
----
-
-## Architecture Details
-
-### Network Design
-```
-State (35 dims) → LSTM (128 hidden) → Output Layer (35 actions)
-                                    ↓
-                              Coordinate Weights (per action, 2D)
-```
-
-**Why LSTM?** StarCraft requires temporal reasoning:
-- "I'm supply blocked" → "I built a depot 30 seconds ago" → "It should finish soon"
-- "I have 400 minerals" → "I've been saving" → "Time to expand"
-
-### Training Details
-- **Reward:** Pure +100 for win, -100 for loss (NO time penalty, NO reward shaping)
-- **Epsilon-greedy exploration:** Starts at 1.0, decays to 0.05 over 1000 episodes
-- **Learning rate:** 0.01
-- **No replay buffer:** Updates happen end-of-episode based on outcome
-- **Model saves:** Every 50 episodes
-- **Current epsilon (ep 252):** 0.29 (~29% exploration)
-
-### Action Execution
-One hardcoded macro for testing: `attack_move` selects all military units and attacks nearest enemy. This proves the concept works before adding per-unit micro. All other actions (build, train, expand) are pure NN decisions.
-
----
-
-## Project Structure
+## Architecture Overview
 
 ```
-starcraft-rl-agent/
-│
-├── game_perception.py          # Extracts game state into feature vector
-├── terran_functions.py         # Wraps PySC2 actions into callable functions
-├── terran_legal_actions_logic.py  # Determines which actions are currently valid
-├── lstm_action_network.py      # LSTM policy network implementation
-├── metrics_logger.py           # Logs all game data for analysis
-├── analyzer.py                 # Generates visualization dashboards
-├── main.py                     # Training loop
-├── EXPERIMENT_LOG.md           # Comprehensive findings and observations
-│
-├── proof_of_concept/
-│   └── hardcode_terran_bot.py  # Early DQN prototype (abandoned)
-│
-├── models/
-│   ├── terran_model.pkl        # Saved every 50 episodes
-│   └── terran_model_final.pkl  # Final trained model
-│
-└── results/
-    ├── training_metrics.jsonl  # Per-episode data (actions, placements, outcomes)
-    └── training_dashboard.png  # Generated visualization
+┌─────────────────────────────────────────────────────────────────┐
+│                      Training Architecture                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   ┌──────────┐    ┌──────────┐    ┌──────────┐                  │
+│   │ Worker 0 │    │ Worker 1 │    │ Worker N │                  │
+│   │  SC2 Env │    │  SC2 Env │    │  SC2 Env │                  │
+│   └────┬─────┘    └────┬─────┘    └────┬─────┘                  │
+│        │               │               │                         │
+│        └───────────────┼───────────────┘                         │
+│                        │                                         │
+│                        ▼                                         │
+│              ┌─────────────────┐                                 │
+│              │   GPU Server    │                                 │
+│              │  ┌───────────┐  │                                 │
+│              │  │   LSTM    │  │                                 │
+│              │  │ + Attn    │  │                                 │
+│              │  └───────────┘  │                                 │
+│              │  ┌───────────┐  │                                 │
+│              │  │    PPO    │  │                                 │
+│              │  │  Trainer  │  │                                 │
+│              │  └───────────┘  │                                 │
+│              └─────────────────┘                                 │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
----
+## Requirements
+
+### Hardware
+- **GPU**: NVIDIA RTX 3090 (24GB VRAM) or equivalent
+- **CPU**: AMD Ryzen 5900X or equivalent (12+ cores recommended for parallel workers)
+- **RAM**: 64GB DDR4 recommended
+- **Storage**: SSD with 50GB+ free space
+
+### Software
+- Python 3.8+
+- StarCraft II (retail or free version)
+- CUDA 11.0+
 
 ## Installation
 
-### 1. Install StarCraft II
-Download the free version:
+1. **Clone the repository**
 ```bash
-# Follow official PySC2 instructions:
-# https://github.com/deepmind/pysc2#quick-start-guide
+git clone https://github.com/yourusername/sc2-lstm-bot.git
+cd sc2-lstm-bot
 ```
 
-### 2. Install Python Dependencies
+2. **Create virtual environment**
+```bash
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# or
+venv\Scripts\activate  # Windows
+```
+
+3. **Install dependencies**
 ```bash
 pip install -r requirements.txt
 ```
 
-No PyTorch, TensorFlow, or GPU required. Pure NumPy implementation.
+4. **Install StarCraft II**
+   - Download from [Blizzard](https://starcraft2.com/)
+   - Install maps: Download [ladder maps](https://github.com/Blizzard/s2client-proto#map-packs) and extract to `StarCraftII/Maps/`
 
----
-
-## Usage
-
-### Train the Agent
+5. **Set environment variable** (Linux/Mac)
 ```bash
-python main.py
+export SC2PATH="/path/to/StarCraftII"
 ```
 
-Training parameters (edit in `main.py`):
-- `episodes = 1000` - Total training episodes
-- `epsilon_decay = 0.995` - Exploration decay rate
-- `learning_rate = 0.01` - Network learning rate
-- `Difficulty.very_easy` - Opponent difficulty
+## Quick Start
 
-### Generate Analysis Dashboard
-After training completes:
+### Training
+
 ```bash
-python analyzer.py
+# Start distributed training with 8 workers
+python parallel_main_memory.py
 ```
 
-Creates `training_dashboard.png` with:
-- Winrate progression
-- Strategy comparisons
-- Building heatmaps
-- Economy curves
+Training will:
+- Launch 8 parallel SC2 instances
+- Train for 1,250 episodes per worker (10,000 total)
+- Save checkpoints every 100 updates
+- Generate metrics logs for visualization
 
-### Watch the Agent Play
-Set `visualize=True` in `main.py` to watch games in real-time (slower).
+### Visualization
 
----
+```bash
+# Generate training dashboard
+python visualize_training.py
+```
 
-## Experimental Design
+This creates `training_dashboard.png` with:
+- Win rate over time
+- Game length distribution
+- Unit/building composition analysis
+- Building placement heatmaps
+- Action distribution
 
-Currently running comparative study across map sizes and difficulty levels:
+## Project Structure
 
-| Map Size | Difficulty | Episodes | Status |
-|----------|-----------|----------|---------|
-| Simple64 | Very Easy | 1000 | **In Progress (252/1000)** |
-| Simple64 | Easy | 1000 | Planned |
-| Simple64 | Medium | 1000 | Planned |
-| Simple64 | Hard | 1000 | Planned |
-| Large Map | Very Easy | 1000 | Planned |
-| Large Map | Easy | 1000 | Planned |
-| Large Map | Medium | 1000 | Planned |
-| Large Map | Hard | 1000 | Planned |
+```
+sc2-lstm-bot/
+├── parallel_main_memory.py    # Main entry point for distributed training
+├── gpu_server_memory.py       # Centralized GPU server with PPO training
+├── worker_memory.py           # Game worker process
+├── worker_rewards.py          # Reward calculation (win/loss)
+├── lstm_memory.py             # LSTM network with temporal attention
+├── game_perception.py         # State encoding (78 features)
+├── coordinate_transform.py    # Map-agnostic coordinate system
+├── base_building_system.py    # Expansion tracking and gating
+├── terran_actions.py          # Action registry and combat macros
+├── terran_buildings.py        # Building construction functions
+├── terran_units.py            # Unit training and abilities
+├── terran_legal_actions_logic.py  # Action preconditions
+├── terran_helper.py           # Utility functions
+├── metrics_logger.py          # Training metrics collection
+├── visualize_training.py      # Dashboard generation
+└── simple64.png               # Map visualization asset
+```
 
-**Total:** 8,000 episodes across 8 experimental conditions
+## Configuration
 
-**Research Questions:**
-1. Does map complexity bottleneck learning independent of opponent skill?
-2. Do different environments produce different emergent strategies?
-3. How does curriculum learning (difficulty scaling) affect RL performance?
-4. Can strategic knowledge transfer across map sizes?
-5. What causes sample efficiency bias toward fast strategies?
+### Training Parameters
 
----
+Edit `parallel_main_memory.py`:
 
-## Results (Episode 252 / 1000)
+```python
+NUM_WORKERS = 8              # Parallel SC2 instances
+EPISODES_PER_WORKER = 1250   # Episodes per worker
+```
 
-### Performance Metrics
-- **Winrate:** 40%+ (up from ~10% at episode 50)  
-- **Fastest Win:** 1193 steps (Episode 166)  
-- **Typical Fast Win:** 1400-2000 steps  
-- **Typical Slow Win:** 3000-3500 steps
-- **Average Loss:** ~3400 steps  
+Edit `gpu_server_memory.py`:
 
-### Strategic Evolution
-- **Episodes 1-50:** Random exploration, learning not to die (~10-15% winrate)
-- **Episodes 50-100:** Initial pattern recognition (~20-25% winrate)
-- **Episodes 100-200:** Strategy emergence - marine/factory timing attacks (~30-40% winrate)
-- **Episodes 200-252:** Strategic diversity - battlecruiser composition discovered (~40%+ winrate)
+```python
+hidden_size = 1024           # LSTM hidden units
+num_lstm_layers = 3          # LSTM depth
+num_attention_heads = 8      # Attention heads
+lr = 3e-4                    # Learning rate
+sequence_length = 128        # Training sequence length
+batch_size = 64              # Training batch size
+ppo_clip = 0.2               # PPO clipping ratio
+entropy_coef = 0.01          # Entropy bonus
+```
 
-### Observed Unit Compositions
-**Winning Games:**
-- Fast wins: Marines, Hellions, Siege Tanks (Factory tech)
-- Slow wins: Marines, Thors, Battlecruisers (Full tech tree)
+Edit `worker_memory.py`:
 
-**Tech Tree Progression:**
-- Barracks: 100% of games
-- Factory + TechLab: ~85% of games
-- Starport: ~40% of games
-- Starport + TechLab + Fusion Core: ~10% of games
+```python
+max_steps = 10_000           # Max steps per episode
+epsilon_start = 0.3          # Initial exploration rate
+epsilon_end = 0.05           # Final exploration rate
+epsilon_decay = 0.995        # Epsilon decay per episode
+```
 
----
+### State Space
 
-## Why This Approach?
+The bot perceives 78 features organized into:
 
-**Most SC2 RL projects rely on:**
-- Pretrained models (AlphaStar)
-- Hardcoded build orders
-- Scripted micro
-- Imitation learning from replays
-- Heavily shaped reward functions
+| Category | Features | Description |
+|----------|----------|-------------|
+| Game Time | 3 | Minutes, phase, game loop |
+| Resources | 4 | Minerals, gas, supply used/cap |
+| Supply State | 2 | Available, full flags |
+| Spatial | 8 | Base, army, enemy positions |
+| Economy | 5 | CC count, SCVs, refineries |
+| Buildings | 18 | All Terran structure counts |
+| Army | 18 | All Terran unit counts |
+| Army State | 4 | Supply, health ratio, combat |
+| Enemy Info | 10 | Race, units, buildings |
+| Upgrades | 6 | Research status flags |
 
-**This project uses:**
-- ✅ Pure win/loss signal (no time penalty, no reward shaping)
-- ✅ Zero hardcoding (except one attack macro for testing)
-- ✅ No replay data
-- ✅ Simple LSTM architecture
-- ✅ Runs on CPU (~25% utilization)
+### Action Space
 
-**Goal:** Prove that a simple system can discover complex strategy through pure trial and error.
+58 discrete actions:
 
----
+| Category | Actions |
+|----------|---------|
+| Basic | do_nothing |
+| Workers | send_idle_workers_to_mine/gas, train_worker |
+| Buildings | supply_depot, barracks, factory, starport, command_center, etc. |
+| Addons | techlab/reactor for barracks, factory, starport |
+| Units | marine, marauder, hellion, siege_tank, medivac, etc. |
+| Abilities | call_down_mule, scanner_sweep |
+| Research | barracks/factory/starport/engineering_bay upgrades |
+| Combat | attack_aggressor, attack_siege, attack_support, attack_harass, retreat_to_base, final_push |
 
-## Key Findings
+## Combat Macros
 
-### 1. Sample Efficiency Bias
-Fast strategies (1500 steps) get more training samples per hour than slow strategies (3500 steps). This creates natural bias toward timing attacks even with neutral rewards.
+The bot uses 6 strategic combat macros instead of low-level attack commands:
 
-**10 fast wins = 10 gradient updates in 4 hours**  
-**5 slow wins = 5 gradient updates in 4 hours**
+| Macro | Description | Units Used |
+|-------|-------------|------------|
+| `attack_aggressor` | Frontline assault | Marines, Marauders, Hellbats, Thors, BCs |
+| `attack_siege` | Area control positioning | Siege Tanks, Liberators, Widow Mines |
+| `attack_support` | Support positioning | Medivacs, Ravens |
+| `attack_harass` | Fast harassment | Reapers, Hellions, Banshees |
+| `retreat_to_base` | Retreat to nearest CC | All army |
+| `final_push` | All-in attack | All army |
 
-Despite this, the agent still discovers battlecruiser compositions, proving LSTM can explore full strategy space.
+## Coordinate System
 
-### 2. Strategic Diversity Without Reward Shaping
-Episode 250 proves complex, multi-stage strategies (Battlecruisers require 5+ tech buildings) emerge naturally from pure win/loss learning.
+The coordinate transformation ensures map-agnostic behavior:
 
-### 3. Function Availability Enables Efficient Exploration
-Dynamic action filtering prevents wasting compute on invalid actions. Early game: 3-5 legal actions. Late game: 25-35 legal actions.
+```
+Top-Left Spawn          Bottom-Right Spawn
+┌───────────────┐       ┌───────────────┐
+│ CC            │       │            CC │
+│   ↘           │  ───► │           ↙   │
+│      Enemy    │       │    Enemy      │
+└───────────────┘       └───────────────┘
+        │                       │
+        └───────────┬───────────┘
+                    ▼
+          Normalized [0,1] Space
+          ┌───────────────┐
+          │ CC (0,0)      │
+          │   ↘           │
+          │      Enemy    │
+          └───────────────┘
+```
 
-### 4. Architectural Simplification
-Pure NumPy LSTM (25% CPU) outperforms PyTorch DQN+CNN (85% GPU, 100% CPU) through better problem abstraction. Simpler is better.
+## Base Building System
 
-### 5. Accidental Emergent Behaviors
-"More command centers = good economy" accidentally creates backup bases for resilience. Not programmed, discovered through trial and error.
+Expansion is gated by base completion requirements:
 
----
+| Tier | Buildings | Required |
+|------|-----------|----------|
+| Anchor | Command Center/Orbital/Planetary | 1 |
+| Production | Barracks, Factory, Starport | 2 |
+| Accessory | Supply Depot, Engineering Bay, etc. | 3 |
 
-## Future Work
+A base must have 1/2/3 of these tiers before expanding to the next location.
 
-- [ ] Complete Simple64 Very Easy (1000 episodes) - **In Progress**
-- [ ] Scale difficulty (Easy → Medium → Hard)
-- [ ] Test large map performance
-- [ ] Add per-unit micro control (remove attack-all macro)
-- [ ] Fix coordinate mapping bug (bottom 20% of map)
-- [ ] Test cross-map transfer learning
-- [ ] Implement self-play training
-- [ ] Add other races (Zerg, Protoss)
+## Interruption Handling
 
----
+Training is designed to survive interruptions:
 
-## Evolution from Prototype
+- **Ctrl+C**: Graceful shutdown, saves model
+- **Crashes**: Workers can be restarted, GPU server preserves state
+- **Checkpoints**: Saved every 100 updates
 
-### Early Prototype (Abandoned)
-- PyTorch DQN with CNN architecture
-- 85% GPU utilization, 100% CPU utilization
-- Heavily scripted action queues
-- Reward shaping for every action
-- Memory leak crashed at episode 80
-- Complex but underperformed
+## Troubleshooting
 
-### Current Version
-- Pure NumPy LSTM implementation
-- ~25% CPU, ~10% GPU (minimal)
-- Zero scripted behaviors (except one attack macro)
-- Pure win/loss reward
-- Stable training 252+ episodes
-- Simple but effective
+### Common Issues
 
-**Key Insight:** Clean abstractions (function availability system) > complex architectures.
+**SC2 won't launch**
+```bash
+# Check SC2PATH
+echo $SC2PATH
+# Should point to StarCraftII directory
+```
 
----
+**Out of VRAM**
+```python
+# Reduce in gpu_server_memory.py:
+hidden_size = 512  # Down from 1024
+batch_size = 32    # Down from 64
+```
 
-## Documentation
+**Workers crashing**
+```bash
+# Check crash logs
+cat crash_log_worker_*.txt
+```
 
-See `EXPERIMENT_LOG.md` for comprehensive findings, observations, and technical details.
-
----
-
-## Contributing
-
-This is a research/educational project. Feel free to:
-- Open issues for bugs or questions
-- Submit PRs for improvements
-- Fork for your own experiments
-
----
+**Slow training**
+```python
+# Reduce workers in parallel_main_memory.py:
+NUM_WORKERS = 4  # Down from 8
+```
 
 ## License
 
-MIT License - feel free to use for research, education, or commercial projects.
-
----
+MIT License - see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-- DeepMind for PySC2
-- Blizzard for StarCraft II API
-- The RL research community for inspiration
-
----
-
-## Contact
-
-**Anthony Galindo**  
-📧 anthonywgalindo@gmail.com  
-💼 [LinkedIn](https://linkedin.com/in/awgalindo)  
-🐙 [GitHub](https://github.com/aerynaaronson)
-
-If you use this project in your research, please cite or link back to this repository.
-
----
+- [DeepMind PySC2](https://github.com/deepmind/pysc2) - StarCraft II Learning Environment
+- [PyTorch](https://pytorch.org/) - Deep Learning Framework
+- [Blizzard Entertainment](https://www.blizzard.com/) - StarCraft II
 
 ## Citation
 
+If you use this project in your research, please cite:
+
 ```bibtex
-@misc{galindo2024sc2rl,
-  author = {Galindo, Anthony},
-  title = {StarCraft II Reinforcement Learning Agent: Emergent Strategy from Pure Win/Loss Learning},
-  year = {2024},
+@misc{sc2lstmbot2025,
+  author = {Your Name},
+  title = {SC2-LSTM-Bot: Reinforcement Learning for StarCraft II},
+  year = {2025},
   publisher = {GitHub},
-  url = {https://github.com/aerynaaronson/starcraft-rl-agent}
+  url = {https://github.com/yourusername/sc2-lstm-bot}
 }
 ```
