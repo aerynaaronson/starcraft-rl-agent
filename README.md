@@ -306,10 +306,10 @@ If you use this project in your research, please cite:
 
 ```bibtex
 @misc{sc2lstmbot2025,
-  author = {Your Name},
+  author = {Anthony Galindo},
   title = {SC2-LSTM-Bot: Reinforcement Learning for StarCraft II},
   year = {2025},
   publisher = {GitHub},
-  url = {https://github.com/yourusername/sc2-lstm-bot}
+  url = {https://github.com/aerynaaronson/starcraft-rl-agent}
 }
 ```

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0] - 2025-01-XX
+## [1.0.0] - 2025-12-27
 
 ### Added
 - Initial public release
@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Terminal reward magnitude issues
 - Memory leaks in visualization dashboard
 
-## [0.9.0] - 2024-XX-XX (Internal)
+## [0.9.0] - 2025-11-30 (Internal)
 
 ### Added
 - Curriculum-based training with 4 phases
