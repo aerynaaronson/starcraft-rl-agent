@@ -248,15 +248,59 @@ class TieredRewardCalculator:
         Tier 3: Combat Efficiency (FINAL TIER)
 
         Tracks combat milestones and damage dealt.
-        No terminal bonus - purely combat achievement based.
+        Includes all T2 milestones (which contain T1 economy).
         Scaled so maximum possible = 0.99 (no negative rewards)
+
+        Distribution: T2 Score 30% (Army/Diversity/Upgrades/Research + T1 Economy), Combat 70%
         """
         reward = 0.0
 
+        # === T2 SCORE MAINTENANCE (30% of total) ===
+        # Includes: T1 Economy (9% of T3), Army Size (9%), Diversity (6%), Upgrades (3%), Research (3%)
+
+        # T1 Economy (9% of T3 total)
+        scv = current['scv_count']
+        for threshold, r in [(44, 0.030), (55, 0.030), (66, 0.030)]:
+            key = f"t3_workers_{threshold}"
+            if scv >= threshold and key not in self.awarded:
+                reward += r
+                self.awarded.add(key)
+
+        # Army Supply (9% of T3 total)
+        army = current['army_supply']
+        for threshold, r in [(10, 0.009), (20, 0.012), (30, 0.012), (50, 0.015), (80, 0.017), (100, 0.014), (130, 0.011)]:
+            key = f"t3_army_{threshold}"
+            if army >= threshold and key not in self.awarded:
+                reward += r
+                self.awarded.add(key)
+
+        # Unit Diversity (6% of T3 total)
+        unit_types_made = sum(1 for _, c in current['unit_counts'].items() if c > 0)
+        for threshold, r in [(2, 0.012), (4, 0.017), (6, 0.017), (8, 0.015)]:
+            key = f"t3_unit_types_{threshold}"
+            if unit_types_made >= threshold and key not in self.awarded:
+                reward += r
+                self.awarded.add(key)
+
+        # Upgrades (3% of T3 total)
+        upgrades = current['upgrades']
+        for threshold, r in [(1, 0.006), (2, 0.006), (3, 0.006), (4, 0.006), (6, 0.006)]:
+            key = f"t3_upgrades_{threshold}"
+            if upgrades >= threshold and key not in self.awarded:
+                reward += r
+                self.awarded.add(key)
+
+        # Research Actions (3% of T3 total - capped at 5 actions)
+        research_count = len([k for k in self.awarded if k.startswith("t3_research_")])
+        if action_name.startswith("research_") and f"t3_research_{action_name}" not in self.awarded and research_count < 5:
+            reward += 0.006
+            self.awarded.add(f"t3_research_{action_name}")
+
+        # === COMBAT EFFICIENCY (70% of total) ===
         current_enemy_buildings = self._get_enemy_buildings(perception)
         current_enemy_army = self._get_enemy_army(perception)
 
-        # Track our losses too (for potential future use)
+        # Track our losses
         our_army = current['army_supply']
         our_workers = current['scv_count']
 
@@ -266,50 +310,47 @@ class TieredRewardCalculator:
             self._total_damage_dealt = 0.0
             self._total_damage_taken = 0.0
 
-        # === DAMAGE DEALT (positive) ===
-        # Enemy buildings destroyed (scaled down from 0.05 to 0.045)
+        # Damage Dealt - Enemy buildings destroyed (40% of combat = 28% of T3)
         if current_enemy_buildings < self.prev_enemy_buildings:
             destroyed = self.prev_enemy_buildings - current_enemy_buildings
-            damage = destroyed * 0.045
+            damage = destroyed * 0.035
             reward += damage
             self._total_damage_dealt += damage
 
-        # Enemy army killed (scaled down from 0.03 to 0.027)
+        # Damage Dealt - Enemy army killed (20% of combat = 14% of T3)
         if current_enemy_army < self.prev_enemy_army:
             killed = self.prev_enemy_army - current_enemy_army
-            damage = (killed / 10.0) * 0.027  # Per ~10 supply
+            damage = (killed / 10.0) * 0.020
             reward += damage
             self._total_damage_dealt += damage
 
-        # === DAMAGE TAKEN (track but don't penalize - no negative rewards) ===
-        # We lost army
+        # Track damage taken (don't penalize - no negative rewards)
         if our_army < self._prev_our_army:
             lost_army = self._prev_our_army - our_army
-            self._total_damage_taken += (lost_army / 10.0) * 0.027
+            self._total_damage_taken += (lost_army / 10.0) * 0.020
 
-        # We lost workers
         if our_workers < self._prev_our_workers:
             lost_workers = self._prev_our_workers - our_workers
-            self._total_damage_taken += lost_workers * 0.009
+            self._total_damage_taken += lost_workers * 0.007
 
-        # === DESTRUCTION MILESTONES ===
+        # Destruction Milestones (20% of combat = 14% of T3)
         total_destroyed = getattr(self, '_total_buildings_destroyed', 0)
         if current_enemy_buildings < self.prev_enemy_buildings:
             total_destroyed += (self.prev_enemy_buildings - current_enemy_buildings)
             self._total_buildings_destroyed = total_destroyed
 
-        for threshold, r in [(3, 0.045), (6, 0.054), (10, 0.073)]:
+        for threshold, r in [(3, 0.035), (6, 0.042), (10, 0.056)]:
             key = f"destroyed_{threshold}"
             if total_destroyed >= threshold and key not in self.awarded:
                 reward += r
                 self.awarded.add(key)
 
-        # === ATTACK ACTIONS ===
+        # Attack Actions (20% of combat = 14% of T3)
         attack_actions = ["attack_aggressor", "attack_siege", "attack_support", "attack_harass", "final_push"]
         if action_name in attack_actions:
             attack_count = len([k for k in self.awarded if k.startswith("attack_")])
             if attack_count < 5:
-                reward += 0.018
+                reward += 0.028
                 self.awarded.add(f"attack_{attack_count}")
 
         # Update tracking
