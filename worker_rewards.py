@@ -198,55 +198,58 @@ class TieredRewardCalculator:
         Tier 2: Army Production & Tech
         Rewards for: army supply milestones, unit diversity, upgrades
         Scaled so maximum possible = 0.99 (no terminal bonus)
+
+        Distribution: Army/Diversity 70%, Upgrades 15%, Research 10%, Economy 5%
         """
         reward = 0.0
 
-        # === ARMY SUPPLY MILESTONES ===
+        # === ARMY SUPPLY MILESTONES (28% of total) ===
         army = current['army_supply']
-        for threshold, r in [(10, 0.027), (20, 0.036), (30, 0.036), (50, 0.045), (80, 0.054), (100, 0.054), (130, 0.064)]:
+        for threshold, r in [(10, 0.030), (20, 0.036), (30, 0.036), (50, 0.045), (80, 0.050), (100, 0.050), (130, 0.033)]:
             key = f"army_{threshold}"
             if army >= threshold and key not in self.awarded:
                 reward += r
                 self.awarded.add(key)
 
-        # === UNIT DIVERSITY ===
+        # === UNIT DIVERSITY (21% of total) ===
         unit_types_made = sum(1 for u, c in current['unit_counts'].items() if c > 0)
-        for threshold, r in [(2, 0.027), (4, 0.036), (6, 0.045), (8, 0.045)]:
+        for threshold, r in [(2, 0.040), (4, 0.055), (6, 0.060), (8, 0.055)]:
             key = f"unit_types_{threshold}"
             if unit_types_made >= threshold and key not in self.awarded:
                 reward += r
                 self.awarded.add(key)
 
-        # === SPECIFIC HIGH-VALUE UNITS ===
+        # === SPECIFIC HIGH-VALUE UNITS (21% of total) ===
         if current['unit_counts'].get('siege_tank', 0) >= 1 and "first_tank" not in self.awarded:
-            reward += 0.036
+            reward += 0.055
             self.awarded.add("first_tank")
         if current['unit_counts'].get('medivac', 0) >= 1 and "first_medivac" not in self.awarded:
-            reward += 0.036
+            reward += 0.055
             self.awarded.add("first_medivac")
         if current['unit_counts'].get('thor', 0) >= 1 and "first_thor" not in self.awarded:
-            reward += 0.027
+            reward += 0.050
             self.awarded.add("first_thor")
         if current['unit_counts'].get('battlecruiser', 0) >= 1 and "first_bc" not in self.awarded:
-            reward += 0.045
+            reward += 0.050
             self.awarded.add("first_bc")
 
-        # === UPGRADES ===
+        # === UPGRADES (15% of total) ===
         upgrades = current['upgrades']
-        for threshold, r in [(1, 0.036), (2, 0.036), (3, 0.045), (4, 0.045), (6, 0.054)]:
+        for threshold, r in [(1, 0.025), (2, 0.030), (3, 0.030), (4, 0.030), (6, 0.033)]:
             key = f"upgrades_{threshold}"
             if upgrades >= threshold and key not in self.awarded:
                 reward += r
                 self.awarded.add(key)
 
-        # === RESEARCH ACTIONS ===
-        if action_name.startswith("research_") and action_name not in self.awarded:
-            reward += 0.027
+        # === RESEARCH ACTIONS (10% of total - capped at 5 actions) ===
+        research_count = len([k for k in self.awarded if k.startswith("research_")])
+        if action_name.startswith("research_") and action_name not in self.awarded and research_count < 5:
+            reward += 0.020
             self.awarded.add(action_name)
 
-        # === ALSO MAINTAIN T1 ECONOMY (reduced rewards) ===
+        # === ALSO MAINTAIN T1 ECONOMY (5% of total) ===
         scv = current['scv_count']
-        for threshold, r in [(44, 0.018), (55, 0.018), (66, 0.027)]:
+        for threshold, r in [(44, 0.015), (55, 0.015), (66, 0.020)]:
             key = f"t2_workers_{threshold}"
             if scv >= threshold and key not in self.awarded:
                 reward += r
