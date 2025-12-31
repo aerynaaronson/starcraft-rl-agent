@@ -196,46 +196,40 @@ class TieredRewardCalculator:
     def _tier2_instant(self, current, action_name, perception):
         """
         Tier 2: Army Production & Tech
-        Rewards for: army supply milestones, unit diversity, upgrades
+        Rewards for: army supply milestones, unit diversity, upgrades, research
         Scaled so maximum possible = 0.99 (no terminal bonus)
 
-        Distribution: Army/Diversity 70%, Upgrades 15%, Research 10%, Economy 5%
+        Distribution: T1 Economy 30%, Army Size 30%, Diversity 20%, Upgrades 10%, Research 10%
         """
         reward = 0.0
 
-        # === ARMY SUPPLY MILESTONES (28% of total) ===
+        # === T1 ECONOMY MAINTENANCE (30% of total) ===
+        scv = current['scv_count']
+        for threshold, r in [(44, 0.099), (55, 0.099), (66, 0.099)]:
+            key = f"t2_workers_{threshold}"
+            if scv >= threshold and key not in self.awarded:
+                reward += r
+                self.awarded.add(key)
+
+        # === ARMY SUPPLY MILESTONES (30% of total) ===
         army = current['army_supply']
-        for threshold, r in [(10, 0.030), (20, 0.036), (30, 0.036), (50, 0.045), (80, 0.050), (100, 0.050), (130, 0.033)]:
+        for threshold, r in [(10, 0.030), (20, 0.040), (30, 0.040), (50, 0.050), (80, 0.055), (100, 0.045), (130, 0.037)]:
             key = f"army_{threshold}"
             if army >= threshold and key not in self.awarded:
                 reward += r
                 self.awarded.add(key)
 
-        # === UNIT DIVERSITY (21% of total) ===
+        # === UNIT DIVERSITY (20% of total) ===
         unit_types_made = sum(1 for u, c in current['unit_counts'].items() if c > 0)
-        for threshold, r in [(2, 0.040), (4, 0.055), (6, 0.060), (8, 0.055)]:
+        for threshold, r in [(2, 0.040), (4, 0.055), (6, 0.055), (8, 0.050)]:
             key = f"unit_types_{threshold}"
             if unit_types_made >= threshold and key not in self.awarded:
                 reward += r
                 self.awarded.add(key)
 
-        # === SPECIFIC HIGH-VALUE UNITS (21% of total) ===
-        if current['unit_counts'].get('siege_tank', 0) >= 1 and "first_tank" not in self.awarded:
-            reward += 0.055
-            self.awarded.add("first_tank")
-        if current['unit_counts'].get('medivac', 0) >= 1 and "first_medivac" not in self.awarded:
-            reward += 0.055
-            self.awarded.add("first_medivac")
-        if current['unit_counts'].get('thor', 0) >= 1 and "first_thor" not in self.awarded:
-            reward += 0.050
-            self.awarded.add("first_thor")
-        if current['unit_counts'].get('battlecruiser', 0) >= 1 and "first_bc" not in self.awarded:
-            reward += 0.050
-            self.awarded.add("first_bc")
-
-        # === UPGRADES (15% of total) ===
+        # === UPGRADES (10% of total) ===
         upgrades = current['upgrades']
-        for threshold, r in [(1, 0.025), (2, 0.030), (3, 0.030), (4, 0.030), (6, 0.033)]:
+        for threshold, r in [(1, 0.020), (2, 0.020), (3, 0.020), (4, 0.020), (6, 0.019)]:
             key = f"upgrades_{threshold}"
             if upgrades >= threshold and key not in self.awarded:
                 reward += r
@@ -246,14 +240,6 @@ class TieredRewardCalculator:
         if action_name.startswith("research_") and action_name not in self.awarded and research_count < 5:
             reward += 0.020
             self.awarded.add(action_name)
-
-        # === ALSO MAINTAIN T1 ECONOMY (5% of total) ===
-        scv = current['scv_count']
-        for threshold, r in [(44, 0.015), (55, 0.015), (66, 0.020)]:
-            key = f"t2_workers_{threshold}"
-            if scv >= threshold and key not in self.awarded:
-                reward += r
-                self.awarded.add(key)
 
         return reward
     
