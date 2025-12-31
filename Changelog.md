@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Implemented fast-track graduation system with higher standards
+  - Reduced `min_episodes_per_tier` from 50 to 25 (50% faster progression)
+  - Increased `graduation_threshold` from 0.7 to 0.85 (stricter performance requirement)
+  - Reduced `graduation_window` from 20 to 10 episodes (more recent performance focus)
+- Merit-based tier progression enables high-performing workers to advance faster while maintaining quality standards
+
 ## [1.0.0] - 2025-12-27
 
 ### Added

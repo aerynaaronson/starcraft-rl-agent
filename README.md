@@ -10,6 +10,7 @@ A reinforcement learning bot for StarCraft II using LSTM networks with temporal 
 ## Features
 
 - **LSTM with Temporal Attention**: 4-layer LSTM (1024 hidden units) with 8-head attention mechanism for long-term strategic memory
+- **Tiered Curriculum Learning**: 3-tier reward system (Economy → Army → Combat) with fast-track graduation for high performers
 - **Map-Agnostic Design**: Coordinate transformation system ensures consistent behavior regardless of spawn position
 - **Distributed Training**: 8 parallel workers with centralized GPU server for efficient training
 - **Complete Terran Tech Tree**: 58 discrete actions covering buildings, units, upgrades, and 6 strategic combat macros
@@ -125,7 +126,7 @@ sc2-lstm-bot/
 ├── parallel_main_memory.py    # Main entry point for distributed training
 ├── gpu_server_memory.py       # Centralized GPU server with PPO training
 ├── worker_memory.py           # Game worker process
-├── worker_rewards.py          # Reward calculation (win/loss)
+├── worker_rewards.py          # Tiered reward system with curriculum learning
 ├── lstm_memory.py             # LSTM network with temporal attention
 ├── game_perception.py         # State encoding (78 features)
 ├── coordinate_transform.py    # Map-agnostic coordinate system

@@ -369,35 +369,79 @@ loss = policy_loss + 0.5 * coord_loss - 0.01 * entropy
 
 ## Reward System
 
-### Current: Pure Win/Loss (`worker_rewards.py`)
+### Current: Tiered Curriculum Learning (`worker_rewards.py`)
+
+The reward system uses a 3-tier curriculum where each worker independently progresses through increasingly complex objectives:
+
+#### Tier 1: Economy & Base Building (0-1.0 reward range)
+
+**Instantaneous milestone rewards** (awarded once at achievement):
+
+| Milestone | Threshold | Reward |
+|-----------|-----------|--------|
+| Workers | 16, 22, 30, 44, 55, 66 SCVs | 0.02-0.05 |
+| Supply Depots | First 4 built | 0.02 each |
+| Production Buildings | First barracks, factory, starport | 0.04-0.05 |
+| Expansions | 2nd base, 3rd base | 0.06-0.08 |
+| Base Completion | Fully functional bases | 0.10-0.12 |
+| Addons | First techlab/reactor | 0.03 each |
+| Tech Buildings | Engineering bay, armory | 0.02-0.03 |
+| Orbital Command | First upgrade | 0.04 |
+| Refineries | First 4 built | 0.02 each |
+
+**Building placement bonus**: Up to +0.015 for buildings placed near Command Centers
+
+#### Tier 2: Army Production & Tech (0-1.0 reward range)
+
+| Milestone | Threshold | Reward |
+|-----------|-----------|--------|
+| Army Supply | 10, 20, 30, 50, 80, 100, 130 | 0.03-0.07 |
+| Unit Diversity | 2, 4, 6, 8 unit types | 0.03-0.05 |
+| Special Units | Siege Tank, Medivac, Thor, BC | 0.03-0.05 |
+| Upgrades | 1, 2, 3, 4, 6 upgrades | 0.04-0.06 |
+| Research Actions | Each unique research | 0.03 |
+| Maintain Economy | Workers at 44, 55, 66 | 0.02-0.03 |
+
+#### Tier 3: Combat Efficiency (normalized ±1 range)
+
+- **Damage Dealt**: Enemy buildings destroyed (0.05 per building) + enemy army killed (0.03 per ~10 supply)
+- **Damage Taken**: Tracked but not penalized step-by-step
+- **Destruction Milestones**: 3, 6, 10+ buildings destroyed (0.05-0.08)
+- **Attack Actions**: Strategic combat decisions (0.02 per action, max 5)
+- **Win Bonus**: Time-based decay (1.0 for <3k steps, 0.1 for >9k steps)
+
+### Graduation System
+
+Workers advance to the next tier when **both** conditions are met:
 
 ```python
-def calculate_terminal_reward(self, outcome, game_length):
-    if outcome == 'win':
-        return 1.0
-    elif outcome == 'loss':
-        return 0.0
-    else:  # timeout
-        return 0.0
+self.min_episodes_per_tier = 25    # Minimum episodes required
+self.graduation_threshold = 0.85   # Must achieve 85% average
+self.graduation_window = 10        # Over last 10 episodes
 ```
+
+**Fast-track graduation**: Workers demonstrating consistent excellence can advance in 25 episodes (vs previous 50)
+**Higher standards**: Must maintain 85% average performance (vs previous 70%) over last 10 episodes
 
 ### Discounting
 
-All step rewards are set to the terminal reward (no per-step shaping):
-
 ```python
-def compute_discounted_rewards(step_rewards, final_reward, gamma=0.99):
-    return [final_reward] * len(step_rewards)
+def compute_discounted_rewards(step_rewards, final_reward, gamma=0.997):
+    """
+    For instantaneous rewards, we don't need heavy discounting.
+    Each step gets its own instant reward + share of terminal.
+    """
+    # Step rewards are already instantaneous - don't compound them
+    # Distribute terminal reward to last 100 steps with decay
 ```
 
-### Rationale
+### Design Philosophy
 
-Previous experiments with shaped rewards (base completion bonuses, unit production rewards) led to:
-- Reward hacking behaviors
-- Double-discounting issues
-- Unstable training
-
-Pure win/loss provides cleaner learning signal.
+1. **Instantaneous Rewards**: Each milestone rewarded once at achievement, not continuously
+2. **Decoupling Tiers**: Each tier has independent action preferences via exploration weights
+3. **Building Placement Optimization**: Rewards spatial coordination (closeness to CC)
+4. **No Step Penalties**: Only rewards, never negative step rewards
+5. **Merit-Based Progression**: Workers can fast-track through tiers by demonstrating excellence
 
 ---
 
