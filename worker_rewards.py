@@ -6,10 +6,13 @@ from base_building_system import BaseTracker
 class TieredRewardCalculator:
     """
     Instantaneous reward system - rewards given ONCE at the moment of achievement.
-    
-    Tier 1: Economy & Base Building (0 to +1)
-    Tier 2: Army Production & Tech (0 to +1)
-    Tier 3: Combat & Win/Loss (+1 win, -1 loss) - FINAL TIER
+
+    Tier 1: Economy & Base Building (0 to 0.99 max)
+    Tier 2: Army Production & Tech (0 to 0.99 max)
+    Tier 3: Combat Efficiency (0 to 0.99 max) - FINAL TIER
+
+    No terminal bonuses - all rewards are milestone-based only.
+    No negative rewards - only positive reinforcement for achievements.
     """
     
     def __init__(self, worker_id=0, base_tracker=None):
@@ -151,264 +154,241 @@ class TieredRewardCalculator:
         """
         Tier 1: Economy & Base Building
         Rewards for: workers, supply depots, production buildings, expansions, addons, tech
+        Scaled so maximum possible = 0.99 (no terminal bonus)
         """
         reward = 0.0
-        
+
         # === WORKER MILESTONES ===
         scv = current['scv_count']
-        for threshold, r in [(16, 0.02), (22, 0.03), (30, 0.03), (44, 0.04), (55, 0.04), (66, 0.05)]:
+        for threshold, r in [(16, 0.018), (22, 0.027), (30, 0.027), (44, 0.036), (55, 0.036), (66, 0.045)]:
             key = f"workers_{threshold}"
             if scv >= threshold and key not in self.awarded:
                 reward += r
                 self.awarded.add(key)
-        
+
         # === SUPPLY DEPOTS (first 4) ===
         if action_name == "build_supply_depot":
             depot_count = len([k for k in self.awarded if k.startswith("depot_")])
             if depot_count < 4:
-                reward += 0.02
+                reward += 0.018
                 self.awarded.add(f"depot_{depot_count}")
-        
+
         # === PRODUCTION BUILDINGS ===
         # First barracks
         if current['barracks_count'] >= 1 and "first_barracks" not in self.awarded:
-            reward += 0.05
+            reward += 0.045
             self.awarded.add("first_barracks")
-        
+
         # Second barracks
         if current['barracks_count'] >= 2 and "second_barracks" not in self.awarded:
-            reward += 0.03
+            reward += 0.027
             self.awarded.add("second_barracks")
-        
+
         # Third+ barracks
         if current['barracks_count'] >= 3 and "third_barracks" not in self.awarded:
-            reward += 0.02
+            reward += 0.018
             self.awarded.add("third_barracks")
-        
+
         # First factory
         if current['factory_count'] >= 1 and "first_factory" not in self.awarded:
-            reward += 0.04
+            reward += 0.036
             self.awarded.add("first_factory")
-        
+
         # First starport
         if current['starport_count'] >= 1 and "first_starport" not in self.awarded:
-            reward += 0.04
+            reward += 0.036
             self.awarded.add("first_starport")
-        
+
         # === EXPANSION ===
         if current['cc_count'] >= 2 and "expansion" not in self.awarded:
-            reward += 0.08
+            reward += 0.073
             self.awarded.add("expansion")
-        
+
         # Third base
         if current['cc_count'] >= 3 and "third_base" not in self.awarded:
-            reward += 0.06
+            reward += 0.054
             self.awarded.add("third_base")
-        
+
         # === BASE COMPLETION (from BaseTracker) ===
         bases_completed = sum(1 for b in self.base_tracker.base_completion if b.get('completed', False))
         if bases_completed >= 1 and "base_complete_1" not in self.awarded:
-            reward += 0.10
+            reward += 0.091
             self.awarded.add("base_complete_1")
         if bases_completed >= 2 and "base_complete_2" not in self.awarded:
-            reward += 0.12
+            reward += 0.109
             self.awarded.add("base_complete_2")
-        
+
         # === ADDONS ===
         if current['techlab_count'] >= 1 and "first_techlab" not in self.awarded:
-            reward += 0.03
+            reward += 0.027
             self.awarded.add("first_techlab")
         if current['reactor_count'] >= 1 and "first_reactor" not in self.awarded:
-            reward += 0.03
+            reward += 0.027
             self.awarded.add("first_reactor")
         if current['techlab_count'] + current['reactor_count'] >= 3 and "three_addons" not in self.awarded:
-            reward += 0.03
+            reward += 0.027
             self.awarded.add("three_addons")
-        
+
         # === TECH BUILDINGS ===
         if current['engineering_bay_count'] >= 1 and "ebay" not in self.awarded:
-            reward += 0.03
+            reward += 0.027
             self.awarded.add("ebay")
         if current['armory_count'] >= 1 and "armory" not in self.awarded:
-            reward += 0.02
+            reward += 0.018
             self.awarded.add("armory")
-        
+
         # === ORBITAL COMMAND ===
         if action_name == "upgrade_orbital_command" and "first_orbital" not in self.awarded:
-            reward += 0.04
+            reward += 0.036
             self.awarded.add("first_orbital")
-        
+
         # === REFINERY ===
         if action_name == "build_refinery":
             ref_count = len([k for k in self.awarded if k.startswith("refinery_")])
             if ref_count < 4:
-                reward += 0.02
+                reward += 0.018
                 self.awarded.add(f"refinery_{ref_count}")
-        
+
         return reward
     
     def _tier2_instant(self, current, action_name, perception):
         """
         Tier 2: Army Production & Tech
         Rewards for: army supply milestones, unit diversity, upgrades
+        Scaled so maximum possible = 0.99 (no terminal bonus)
         """
         reward = 0.0
-        
+
         # === ARMY SUPPLY MILESTONES ===
         army = current['army_supply']
-        for threshold, r in [(10, 0.03), (20, 0.04), (30, 0.04), (50, 0.05), (80, 0.06), (100, 0.06), (130, 0.07)]:
+        for threshold, r in [(10, 0.027), (20, 0.036), (30, 0.036), (50, 0.045), (80, 0.054), (100, 0.054), (130, 0.064)]:
             key = f"army_{threshold}"
             if army >= threshold and key not in self.awarded:
                 reward += r
                 self.awarded.add(key)
-        
+
         # === UNIT DIVERSITY ===
         unit_types_made = sum(1 for u, c in current['unit_counts'].items() if c > 0)
-        for threshold, r in [(2, 0.03), (4, 0.04), (6, 0.05), (8, 0.05)]:
+        for threshold, r in [(2, 0.027), (4, 0.036), (6, 0.045), (8, 0.045)]:
             key = f"unit_types_{threshold}"
             if unit_types_made >= threshold and key not in self.awarded:
                 reward += r
                 self.awarded.add(key)
-        
+
         # === SPECIFIC HIGH-VALUE UNITS ===
         if current['unit_counts'].get('siege_tank', 0) >= 1 and "first_tank" not in self.awarded:
-            reward += 0.04
+            reward += 0.036
             self.awarded.add("first_tank")
         if current['unit_counts'].get('medivac', 0) >= 1 and "first_medivac" not in self.awarded:
-            reward += 0.04
+            reward += 0.036
             self.awarded.add("first_medivac")
         if current['unit_counts'].get('thor', 0) >= 1 and "first_thor" not in self.awarded:
-            reward += 0.03
+            reward += 0.027
             self.awarded.add("first_thor")
         if current['unit_counts'].get('battlecruiser', 0) >= 1 and "first_bc" not in self.awarded:
-            reward += 0.05
+            reward += 0.045
             self.awarded.add("first_bc")
-        
+
         # === UPGRADES ===
         upgrades = current['upgrades']
-        for threshold, r in [(1, 0.04), (2, 0.04), (3, 0.05), (4, 0.05), (6, 0.06)]:
+        for threshold, r in [(1, 0.036), (2, 0.036), (3, 0.045), (4, 0.045), (6, 0.054)]:
             key = f"upgrades_{threshold}"
             if upgrades >= threshold and key not in self.awarded:
                 reward += r
                 self.awarded.add(key)
-        
+
         # === RESEARCH ACTIONS ===
         if action_name.startswith("research_") and action_name not in self.awarded:
-            reward += 0.03
+            reward += 0.027
             self.awarded.add(action_name)
-        
+
         # === ALSO MAINTAIN T1 ECONOMY (reduced rewards) ===
         scv = current['scv_count']
-        for threshold, r in [(44, 0.02), (55, 0.02), (66, 0.03)]:
+        for threshold, r in [(44, 0.018), (55, 0.018), (66, 0.027)]:
             key = f"t2_workers_{threshold}"
             if scv >= threshold and key not in self.awarded:
                 reward += r
                 self.awarded.add(key)
-        
+
         return reward
     
     def _tier3_instant(self, current, action_name, perception):
         """
         Tier 3: Combat Efficiency (FINAL TIER)
-        
-        Tracks trade efficiency: damage dealt vs damage taken.
-        Rewards destroying enemy stuff, penalizes losing your stuff.
-        Final score normalized to +1/-1 based on outcome with time decay.
+
+        Tracks combat milestones and damage dealt.
+        No terminal bonus - purely combat achievement based.
+        Scaled so maximum possible = 0.99 (no negative rewards)
         """
         reward = 0.0
-        
+
         current_enemy_buildings = self._get_enemy_buildings(perception)
         current_enemy_army = self._get_enemy_army(perception)
-        
-        # Track our losses too
+
+        # Track our losses too (for potential future use)
         our_army = current['army_supply']
         our_workers = current['scv_count']
-        
+
         if not hasattr(self, '_prev_our_army'):
             self._prev_our_army = our_army
             self._prev_our_workers = our_workers
             self._total_damage_dealt = 0.0
             self._total_damage_taken = 0.0
-        
+
         # === DAMAGE DEALT (positive) ===
-        # Enemy buildings destroyed
+        # Enemy buildings destroyed (scaled down from 0.05 to 0.045)
         if current_enemy_buildings < self.prev_enemy_buildings:
             destroyed = self.prev_enemy_buildings - current_enemy_buildings
-            damage = destroyed * 0.05  # ~100 minerals per building equivalent
+            damage = destroyed * 0.045
             reward += damage
             self._total_damage_dealt += damage
-        
-        # Enemy army killed
+
+        # Enemy army killed (scaled down from 0.03 to 0.027)
         if current_enemy_army < self.prev_enemy_army:
             killed = self.prev_enemy_army - current_enemy_army
-            damage = (killed / 10.0) * 0.03  # Per ~10 supply
+            damage = (killed / 10.0) * 0.027  # Per ~10 supply
             reward += damage
             self._total_damage_dealt += damage
-        
-        # === DAMAGE TAKEN (track but don't penalize step-by-step) ===
+
+        # === DAMAGE TAKEN (track but don't penalize - no negative rewards) ===
         # We lost army
         if our_army < self._prev_our_army:
             lost_army = self._prev_our_army - our_army
-            self._total_damage_taken += (lost_army / 10.0) * 0.03
-        
+            self._total_damage_taken += (lost_army / 10.0) * 0.027
+
         # We lost workers
         if our_workers < self._prev_our_workers:
             lost_workers = self._prev_our_workers - our_workers
-            self._total_damage_taken += lost_workers * 0.01
-        
+            self._total_damage_taken += lost_workers * 0.009
+
         # === DESTRUCTION MILESTONES ===
         total_destroyed = getattr(self, '_total_buildings_destroyed', 0)
         if current_enemy_buildings < self.prev_enemy_buildings:
             total_destroyed += (self.prev_enemy_buildings - current_enemy_buildings)
             self._total_buildings_destroyed = total_destroyed
-        
-        for threshold, r in [(3, 0.05), (6, 0.06), (10, 0.08)]:
+
+        for threshold, r in [(3, 0.045), (6, 0.054), (10, 0.073)]:
             key = f"destroyed_{threshold}"
             if total_destroyed >= threshold and key not in self.awarded:
                 reward += r
                 self.awarded.add(key)
-        
+
         # === ATTACK ACTIONS ===
         attack_actions = ["attack_aggressor", "attack_siege", "attack_support", "attack_harass", "final_push"]
         if action_name in attack_actions:
             attack_count = len([k for k in self.awarded if k.startswith("attack_")])
             if attack_count < 5:
-                reward += 0.02
+                reward += 0.018
                 self.awarded.add(f"attack_{attack_count}")
-        
+
         # Update tracking
         self.prev_enemy_buildings = current_enemy_buildings
         self.prev_enemy_army = current_enemy_army
         self._prev_our_army = our_army
         self._prev_our_workers = our_workers
-        
+
         return reward
     
-    def _calculate_t3_final_score(self, outcome, game_length):
-        """
-        Calculate T3 final score:
-        - Loss: always 0 (valueless)
-        - Win: 1.0 if under 3k steps, decays to 0.1 at 9k+ steps
-        
-        Keeps reward in [0, 1] range consistent with T1/T2 training.
-        """
-        if outcome != 'win':
-            return 0.0
-        
-        # Win reward with time decay
-        # Before 3k steps: 1.0
-        # 3k-9k steps: linear decay from 1.0 to 0.1
-        # After 9k steps: 0.1
-        
-        if game_length <= 3000:
-            return 1.0
-        elif game_length >= 9000:
-            return 0.1
-        else:
-            # Linear decay from 1.0 at 3k to 0.1 at 9k
-            # slope = (0.1 - 1.0) / (9000 - 3000) = -0.9 / 6000 = -0.00015
-            decay_progress = (game_length - 3000) / 6000.0  # 0.0 to 1.0
-            return 1.0 - (decay_progress * 0.9)  # 1.0 to 0.1
     
     def _extract_state(self, p):
         """Extract current game state from perception."""
@@ -471,33 +451,19 @@ class TieredRewardCalculator:
     
     def calculate_terminal_reward(self, outcome, game_length):
         """
-        Terminal reward.
-        T1-T2: Small bonus for winning
-        T3: Efficiency-based score normalized to [-1, +1] with time decay
+        Terminal reward - REMOVED for all tiers.
+        All rewards are milestone-based only.
         """
-        if self.current_tier == 3:
-            return self._calculate_t3_final_score(outcome, game_length)
-        else:
-            # T1-T2: Small completion bonus
-            if outcome == 'win':
-                return 0.15
-            elif outcome == 'timeout':
-                return 0.05
-            else:
-                return 0.0
+        # No terminal bonuses - all tiers reward milestones only
+        return 0.0
     
     def get_episode_score(self):
         """
         Get the total score for this episode.
         This is what determines tier graduation.
+        All tiers: cap at 1.0 for safety (should be 0.99 max from milestones)
         """
-        if self.current_tier == 3:
-            # T3: Score will be normalized to +1/-1 at terminal
-            # For tracking purposes, cap at 1.0 for step rewards
-            return min(self.episode_instant_total, 1.0)
-        else:
-            # T1-T2: Cap at 1.0
-            return min(self.episode_instant_total, 1.0)
+        return min(self.episode_instant_total, 1.0)
     
     def _check_graduation(self):
         if len(self.episode_rewards_history) < 20:
@@ -508,25 +474,18 @@ class TieredRewardCalculator:
     
     def end_episode(self, outcome, game_length=0):
         """End episode and check for tier graduation."""
-        terminal_reward = self.calculate_terminal_reward(outcome, game_length)
-        
-        if self.current_tier == 3:
-            # Tier 3 FINAL: Use the efficiency-based final score directly
-            episode_score = terminal_reward  # Already in [-1, +1] range
-        else:
-            # T1-T2: instantaneous rewards + terminal bonus, capped at 1.0
-            episode_score = self.get_episode_score() + terminal_reward
-            episode_score = min(episode_score, 1.0)
-        
+        # No terminal bonuses - episode score is just the milestone rewards
+        episode_score = self.get_episode_score()
+
         self.episode_rewards_history.append(episode_score)
         self.tier_scores.append(episode_score)
         self.episodes_in_tier += 1
-        
+
         if len(self.tier_scores) > self.graduation_window:
             self.tier_scores = self.tier_scores[-self.graduation_window:]
-        
+
         graduated = False
-        
+
         # Only graduate from T1 and T2 (T3 is final)
         if self.current_tier < 3 and self.episodes_in_tier >= self.min_episodes_per_tier:
             if self._check_graduation():
@@ -536,7 +495,7 @@ class TieredRewardCalculator:
                 self.episodes_in_tier = 0
                 graduated = True
                 print(f"[Worker {self.worker_id}] GRADUATED to Tier {self.current_tier}")
-        
+
         return graduated, self.current_tier, episode_score
     
     def get_status(self):
@@ -547,24 +506,16 @@ class TieredRewardCalculator:
 def compute_discounted_rewards(step_rewards, final_reward, gamma=0.997):
     """
     For instantaneous rewards, we don't need heavy discounting.
-    Each step gets its own instant reward + share of terminal.
+    Each step gets its own instant reward.
+    No terminal bonuses - final_reward is always 0.0.
     """
     n = len(step_rewards)
     if n == 0:
-        return [final_reward]
-    
-    # Step rewards are already instantaneous - don't compound them
-    # Just add a small portion of terminal reward to final steps
-    rewards = list(step_rewards)
-    
-    # Distribute terminal reward to last 100 steps with decay
-    terminal_steps = min(100, n)
-    for i in range(terminal_steps):
-        idx = n - 1 - i
-        decay = gamma ** i
-        rewards[idx] += final_reward * decay * 0.1  # Small terminal bonus
-    
-    return rewards
+        return [0.0]
+
+    # Step rewards are already instantaneous - just return them as-is
+    # No terminal bonus distribution since final_reward is always 0
+    return list(step_rewards)
 
 
 # Backwards compatibility
