@@ -255,6 +255,13 @@ class LSTMActionNetwork(nn.Module):
             nn.Sigmoid()  # [0, 1] range
         )
         
+        # Value head - predicts expected return from this state
+        self.value_head = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_size // 2, 1)
+        )
+        
         # Episode memory buffer for attention - FULL EPISODE
         self.episode_memory = EpisodeMemoryBuffer(max_length=10000)
         self.current_step = 0
@@ -335,6 +342,52 @@ class LSTMActionNetwork(nn.Module):
         
         return action_logits, coords, hidden, attention_weights
     
+    def forward_sequence(self, state_sequence, hidden=None):
+        """
+        Forward pass for training that returns outputs at ALL timesteps.
+        No attention memory, no episode tracking - pure sequence processing.
+        
+        Args:
+            state_sequence: [batch, seq_len, state_size]
+            hidden: Optional LSTM hidden state
+            
+        Returns:
+            action_logits: [batch, seq_len, num_actions]
+            coords: [batch, seq_len, 2]
+            values: [batch, seq_len, 1]
+            hidden: Final LSTM hidden state
+        """
+        device = state_sequence.device
+        batch_size, seq_len, _ = state_sequence.shape
+        
+        if hidden is None:
+            hidden = self.init_hidden(batch_size)
+        
+        # Project input
+        x = self.input_proj(state_sequence)  # [batch, seq_len, hidden_size]
+        
+        # Add positional encoding
+        x = self.pos_encoding(x)
+        
+        # LSTM forward - gets ALL timestep outputs
+        lstm_out, hidden = self.lstm(x, hidden)  # [batch, seq_len, hidden_size]
+        lstm_out = self.ln1(lstm_out)
+        
+        # Apply action, coord, and value heads to ALL timesteps
+        # Reshape to [batch * seq_len, hidden_size] for linear layers
+        lstm_flat = lstm_out.view(batch_size * seq_len, -1)
+        
+        action_logits = self.fc_action(lstm_flat)  # [batch * seq_len, num_actions]
+        coords = self.coord_head(lstm_flat)  # [batch * seq_len, 2]
+        values = self.value_head(lstm_flat)  # [batch * seq_len, 1]
+        
+        # Reshape back to [batch, seq_len, ...]
+        action_logits = action_logits.view(batch_size, seq_len, -1)
+        coords = coords.view(batch_size, seq_len, -1)
+        values = values.view(batch_size, seq_len, -1)
+        
+        return action_logits, coords, values, hidden
+
     def predict(self, state, legal_actions, action_to_index, coord_transform, hidden=None):
         """
         Predict action and coordinates for a given state.

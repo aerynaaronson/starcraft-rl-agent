@@ -2,7 +2,7 @@
 Terran action registry and attack logic.
 Centralized action management and combat control.
 
-UPDATED: Split attack_move into 6 strategic combat macros
+UPDATED: Combat macros use network coordinates for independent army control
 """
 
 from pysc2.lib import actions, features, units
@@ -94,306 +94,331 @@ def get_enemy_base_location(obs):
     return (int(avg_x), int(avg_y))
 
 
-def attack_aggressor(obs, _x=None, _y=None):
+def attack_aggressor(obs, target_x=None, target_y=None):
     """
     AGGRESSOR: Frontline push with bio/mech assault units
     Uses: Marines, Marauders, Hellbats, Thors, Battlecruisers
+    
+    Target coordinates from network determine WHERE to push.
     """
     army = get_army_units(obs)
     if not army:
         return actions.RAW_FUNCTIONS.no_op()
     
-    enemies = get_enemy_units(obs)
-    
+    # Get aggressor units
     bio_aggro = [u for u in army if u.unit_type in [units.Terran.Marine, units.Terran.Marauder]]
     mech_aggro = [u for u in army if u.unit_type in [units.Terran.Hellbat, units.Terran.Thor]]
     air_aggro = [u for u in army if u.unit_type == units.Terran.Battlecruiser]
     
+    aggro_units = bio_aggro + mech_aggro + air_aggro
+    if not aggro_units:
+        return actions.RAW_FUNCTIONS.no_op()
+    
+    # Determine target location
+    if target_x is not None and target_y is not None:
+        target = (int(target_x), int(target_y))
+    else:
+        # Fallback: attack closest enemy or enemy base
+        enemies = get_enemy_units(obs)
+        if enemies:
+            target = (int(enemies[0].x), int(enemies[0].y))
+        else:
+            target = get_enemy_base_location(obs)
+    
+    enemies = get_enemy_units(obs)
     action_list = []
     
-    # BIO: Stim and charge
+    # BIO: Stim if enemies nearby target
     if bio_aggro:
         bio_tags = [u.tag for u in bio_aggro]
-        stim_tags = [u.tag for u in bio_aggro if u.energy >= 10]
+        stim_candidates = [u for u in bio_aggro if u.energy >= 10]
         
-        if stim_tags and enemies:
-            closest_dist = min(distance(bio_aggro[0], e) for e in enemies)
-            if closest_dist < 20:
-                action_list.append(actions.RAW_FUNCTIONS.Effect_Stim_quick("now", stim_tags))
+        if stim_candidates and enemies:
+            # Check if enemies near our target
+            enemies_near_target = [e for e in enemies if distance(target, (e.x, e.y)) < 15]
+            if enemies_near_target:
+                closest_to_bio = min(enemies, key=lambda e: distance(bio_aggro[0], e))
+                if distance(bio_aggro[0], closest_to_bio) < 20:
+                    action_list.append(actions.RAW_FUNCTIONS.Effect_Stim_quick("now", [u.tag for u in stim_candidates]))
         
-        if enemies:
-            target = min(enemies, key=lambda e: distance(bio_aggro[0], e))
-            action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", bio_tags, (int(target.x), int(target.y))))
-        else:
-            enemy_base = get_enemy_base_location(obs)
-            action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", bio_tags, enemy_base))
+        action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", bio_tags, target))
     
-    # MECH: Push forward
+    # MECH: Push to target
     if mech_aggro:
         mech_tags = [u.tag for u in mech_aggro]
-        if enemies:
-            target = min(enemies, key=lambda e: distance(mech_aggro[0], e))
-            action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", mech_tags, (int(target.x), int(target.y))))
-        else:
-            enemy_base = get_enemy_base_location(obs)
-            action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", mech_tags, enemy_base))
+        action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", mech_tags, target))
     
-    # AIR: Battlecruisers
+    # AIR: Battlecruisers to target, Yamato high-value if in range
     if air_aggro:
         air_tags = [u.tag for u in air_aggro]
         for bc in air_aggro:
             if bc.energy >= 125 and enemies:
-                target = min(enemies, key=lambda e: distance(bc, e))
-                if distance(bc, target) <= 10:
-                    action_list.append(actions.RAW_FUNCTIONS.Effect_YamatoGun_screen("now", [bc.tag], (int(target.x), int(target.y))))
-                    break
+                # Yamato closest enemy to our target
+                enemies_near = [e for e in enemies if distance(target, (e.x, e.y)) < 20]
+                if enemies_near:
+                    yamato_target = min(enemies_near, key=lambda e: distance(bc, e))
+                    if distance(bc, yamato_target) <= 10:
+                        action_list.append(actions.RAW_FUNCTIONS.Effect_YamatoGun_unit("now", bc.tag, yamato_target.tag))
+                        break
         
-        if enemies:
-            target = min(enemies, key=lambda e: distance(air_aggro[0], e))
-            action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", air_tags, (int(target.x), int(target.y))))
-        else:
-            enemy_base = get_enemy_base_location(obs)
-            action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", air_tags, enemy_base))
+        action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", air_tags, target))
     
     return action_list[0] if action_list else actions.RAW_FUNCTIONS.no_op()
 
 
-def attack_siege(obs, _x=None, _y=None):
+def attack_siege(obs, target_x=None, target_y=None):
     """
     SIEGE: Position siege units for area control
     Uses: Siege Tanks, Liberators, Widow Mines
+    
+    Target coordinates from network determine WHERE to set up siege.
     """
     army = get_army_units(obs)
     if not army:
         return actions.RAW_FUNCTIONS.no_op()
-    
-    enemies = get_enemy_units(obs)
     
     tanks = [u for u in army if u.unit_type in [units.Terran.SiegeTank, units.Terran.SiegeTankSieged]]
     liberators = [u for u in army if u.unit_type in [units.Terran.Liberator, units.Terran.LiberatorAG]]
     mines = [u for u in army if u.unit_type in [units.Terran.WidowMine, units.Terran.WidowMineBurrowed]]
     
+    siege_units = tanks + liberators + mines
+    if not siege_units:
+        return actions.RAW_FUNCTIONS.no_op()
+    
+    # Determine target location for siege setup
+    if target_x is not None and target_y is not None:
+        target = (int(target_x), int(target_y))
+    else:
+        # Fallback: position toward enemy
+        target = get_enemy_base_location(obs)
+    
+    enemies = get_enemy_units(obs)
     action_list = []
     
-    # TANKS: Siege management
+    # TANKS: Move to target, siege when in position
     for tank in tanks:
+        dist_to_target = distance(tank, target)
+        
         if tank.unit_type == units.Terran.SiegeTankSieged:
-            if enemies:
-                closest = min(enemies, key=lambda e: distance(tank, e))
-                dist = distance(tank, closest)
-                if dist < 5 or dist > 13:
-                    action_list.append(actions.RAW_FUNCTIONS.Morph_Unsiege_quick("now", [tank.tag]))
-                else:
-                    action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [tank.tag], (int(closest.x), int(closest.y))))
-            else:
+            # Already sieged - check if we should unsiege to reposition
+            if dist_to_target > 15:
+                # Too far from target, unsiege to move
                 action_list.append(actions.RAW_FUNCTIONS.Morph_Unsiege_quick("now", [tank.tag]))
-        else:
-            if enemies:
-                closest = min(enemies, key=lambda e: distance(tank, e))
-                dist = distance(tank, closest)
-                if 7 <= dist <= 13:
-                    action_list.append(actions.RAW_FUNCTIONS.Morph_SiegeMode_quick("now", [tank.tag]))
-                elif dist > 13:
+            elif enemies:
+                # Sieged and in position - attack enemies in range
+                in_range = [e for e in enemies if distance(tank, e) <= 13]
+                if in_range:
+                    closest = min(in_range, key=lambda e: distance(tank, e))
                     action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [tank.tag], (int(closest.x), int(closest.y))))
-                else:
-                    retreat_x = tank.x + (tank.x - closest.x) * 0.3
-                    retreat_y = tank.y + (tank.y - closest.y) * 0.3
-                    action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", [tank.tag], (int(retreat_x), int(retreat_y))))
+                elif distance(tank, target) > 13:
+                    # No enemies in range and not at target
+                    action_list.append(actions.RAW_FUNCTIONS.Morph_Unsiege_quick("now", [tank.tag]))
+        else:
+            # Unsieged tank
+            if dist_to_target <= 8:
+                # At target position, siege up
+                action_list.append(actions.RAW_FUNCTIONS.Morph_SiegeMode_quick("now", [tank.tag]))
             else:
-                enemy_base = get_enemy_base_location(obs)
-                action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [tank.tag], enemy_base))
+                # Move toward target
+                action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", [tank.tag], target))
     
-    # LIBERATORS: Siege mode switching
+    # LIBERATORS: Set up at target
     for lib in liberators:
+        dist_to_target = distance(lib, target)
         ground_enemies = [e for e in enemies if not is_air_unit(e)]
-        air_enemies = [e for e in enemies if is_air_unit(e)]
         
         if lib.unit_type == units.Terran.LiberatorAG:
-            if air_enemies or not ground_enemies:
+            # Already in AG mode
+            if dist_to_target > 15:
+                # Too far, switch to AA and reposition
                 action_list.append(actions.RAW_FUNCTIONS.Morph_LiberatorAAMode_quick("now", [lib.tag]))
-            elif ground_enemies:
-                target = min(ground_enemies, key=lambda e: distance(lib, e))
-                action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [lib.tag], (int(target.x), int(target.y))))
         else:
-            if ground_enemies and not air_enemies:
-                target = min(ground_enemies, key=lambda e: distance(lib, e))
-                if distance(lib, target) <= 12:
-                    action_list.append(actions.RAW_FUNCTIONS.Morph_LiberatorAGMode_pt("now", [lib.tag], (int(target.x), int(target.y))))
-                else:
-                    action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", [lib.tag], (int(target.x), int(target.y))))
-            elif enemies:
-                target = min(enemies, key=lambda e: distance(lib, e))
-                action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [lib.tag], (int(target.x), int(target.y))))
+            # AA mode
+            if dist_to_target <= 10 and ground_enemies:
+                # At target with ground enemies, switch to AG
+                action_list.append(actions.RAW_FUNCTIONS.Morph_LiberatorAGMode_pt("now", [lib.tag], target))
             else:
-                enemy_base = get_enemy_base_location(obs)
-                action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", [lib.tag], enemy_base))
+                # Move toward target
+                action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", [lib.tag], target))
     
-    # WIDOW MINES: Burrow
+    # WIDOW MINES: Burrow at target
     for mine in mines:
+        dist_to_target = distance(mine, target)
+        
         if mine.unit_type == units.Terran.WidowMine:
-            if enemies:
-                closest = min(enemies, key=lambda e: distance(mine, e))
-                if distance(mine, closest) > 6:
-                    action_list.append(actions.RAW_FUNCTIONS.BurrowDown_WidowMine_quick("now", [mine.tag]))
-                else:
-                    retreat_x = mine.x + (mine.x - closest.x)
-                    retreat_y = mine.y + (mine.y - closest.y)
-                    action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", [mine.tag], (int(retreat_x), int(retreat_y))))
-            else:
+            if dist_to_target <= 5:
+                # At target, burrow
                 action_list.append(actions.RAW_FUNCTIONS.BurrowDown_WidowMine_quick("now", [mine.tag]))
+            else:
+                # Move to target
+                action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", [mine.tag], target))
+        # Burrowed mines stay put
     
     return action_list[0] if action_list else actions.RAW_FUNCTIONS.no_op()
 
 
-def attack_support(obs, _x=None, _y=None):
+def attack_support(obs, target_x=None, target_y=None):
     """
     SUPPORT: Utility units with abilities
     Uses: Medivacs, Ravens, Vikings, Ghosts
+    
+    Target coordinates from network determine WHERE to position support.
     """
     army = get_army_units(obs)
     if not army:
         return actions.RAW_FUNCTIONS.no_op()
-    
-    enemies = get_enemy_units(obs)
     
     medivacs = [u for u in army if u.unit_type == units.Terran.Medivac]
     ravens = [u for u in army if u.unit_type == units.Terran.Raven]
     vikings = [u for u in army if u.unit_type in [units.Terran.VikingFighter, units.Terran.VikingAssault]]
     ghosts = [u for u in army if u.unit_type == units.Terran.Ghost]
     
+    support_units = medivacs + ravens + vikings + ghosts
+    if not support_units:
+        return actions.RAW_FUNCTIONS.no_op()
+    
+    # Determine target location
+    if target_x is not None and target_y is not None:
+        target = (int(target_x), int(target_y))
+    else:
+        # Fallback: follow army center
+        if army:
+            army_x = sum(u.x for u in army) / len(army)
+            army_y = sum(u.y for u in army) / len(army)
+            target = (int(army_x), int(army_y))
+        else:
+            target = (50, 50)
+    
+    enemies = get_enemy_units(obs)
     action_list = []
     
-    if army:
-        army_x = sum(u.x for u in army) / len(army)
-        army_y = sum(u.y for u in army) / len(army)
-        army_center = (army_x, army_y)
-    else:
-        army_center = (50, 50)
-    
-    # MEDIVACS: Follow army
+    # MEDIVACS: Move to target (will auto-heal nearby bio)
     if medivacs:
         medivac_tags = [m.tag for m in medivacs]
-        action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", medivac_tags, (int(army_center[0]), int(army_center[1]))))
+        action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", medivac_tags, target))
     
-    # RAVENS: Stay back
+    # RAVENS: Position at target, stay back from enemies
     if ravens:
         for raven in ravens:
-            if enemies:
-                closest = min(enemies, key=lambda e: distance(raven, e))
-                retreat_x = army_center[0] + (army_center[0] - closest.x) * 0.2
-                retreat_y = army_center[1] + (army_center[1] - closest.y) * 0.2
-                action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", [raven.tag], (int(retreat_x), int(retreat_y))))
+            # Check for enemies near target
+            enemies_near = [e for e in enemies if distance(target, (e.x, e.y)) < 15]
+            if enemies_near:
+                # Stay slightly back from target
+                closest_enemy = min(enemies_near, key=lambda e: distance(target, (e.x, e.y)))
+                dx = target[0] - closest_enemy.x
+                dy = target[1] - closest_enemy.y
+                safe_x = target[0] + dx * 0.3
+                safe_y = target[1] + dy * 0.3
+                action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", [raven.tag], (int(safe_x), int(safe_y))))
             else:
-                action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", [raven.tag], (int(army_center[0]), int(army_center[1]))))
+                action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", [raven.tag], target))
     
-    # VIKINGS: Transform based on threats
+    # VIKINGS: Move to target, transform based on threats
     for viking in vikings:
         air_enemies = [e for e in enemies if is_air_unit(e)]
-        ground_enemies = [e for e in enemies if not is_air_unit(e)]
         
         if viking.unit_type == units.Terran.VikingFighter:
             if air_enemies:
-                target = min(air_enemies, key=lambda e: distance(viking, e))
-                action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [viking.tag], (int(target.x), int(target.y))))
-            elif ground_enemies:
-                action_list.append(actions.RAW_FUNCTIONS.Morph_VikingAssaultMode_quick("now", [viking.tag]))
+                closest_air = min(air_enemies, key=lambda e: distance(viking, e))
+                action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [viking.tag], (int(closest_air.x), int(closest_air.y))))
             else:
-                action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", [viking.tag], (int(army_center[0]), int(army_center[1]))))
+                # No air threats, move to target (or transform if ground enemies)
+                ground_near_target = [e for e in enemies if not is_air_unit(e) and distance(target, (e.x, e.y)) < 15]
+                if ground_near_target:
+                    action_list.append(actions.RAW_FUNCTIONS.Morph_VikingAssaultMode_quick("now", [viking.tag]))
+                else:
+                    action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", [viking.tag], target))
         else:
+            # Assault mode
             if air_enemies:
                 action_list.append(actions.RAW_FUNCTIONS.Morph_VikingFighterMode_quick("now", [viking.tag]))
-            elif ground_enemies:
-                target = min(ground_enemies, key=lambda e: distance(viking, e))
-                action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [viking.tag], (int(target.x), int(target.y))))
             else:
-                action_list.append(actions.RAW_FUNCTIONS.Morph_VikingFighterMode_quick("now", [viking.tag]))
+                action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [viking.tag], target))
     
-    # GHOSTS: Follow army
+    # GHOSTS: Move to target, use abilities
     if ghosts:
         for ghost in ghosts:
-            if enemies:
-                target = min(enemies, key=lambda e: distance(ghost, e))
-                action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [ghost.tag], (int(target.x), int(target.y))))
-            else:
-                action_list.append(actions.RAW_FUNCTIONS.Move_pt("now", [ghost.tag], (int(army_center[0]), int(army_center[1]))))
+            action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [ghost.tag], target))
     
     return action_list[0] if action_list else actions.RAW_FUNCTIONS.no_op()
 
 
-def attack_harass(obs, _x=None, _y=None):
+def attack_harass(obs, target_x=None, target_y=None):
     """
-    HARASS: Fast raiders for map control
+    HARASS: Fast raiders for economic damage
     Uses: Reapers, Hellions, Banshees, Cyclones
+    
+    Target coordinates from network determine WHERE to raid (e.g. enemy mineral line).
     """
     army = get_army_units(obs)
     if not army:
         return actions.RAW_FUNCTIONS.no_op()
-    
-    enemies = get_enemy_units(obs)
     
     reapers = [u for u in army if u.unit_type == units.Terran.Reaper]
     hellions = [u for u in army if u.unit_type == units.Terran.Hellion]
     banshees = [u for u in army if u.unit_type == units.Terran.Banshee]
     cyclones = [u for u in army if u.unit_type == units.Terran.Cyclone]
     
-    action_list = []
-    enemy_base = get_enemy_base_location(obs)
+    harass_units = reapers + hellions + banshees + cyclones
+    if not harass_units:
+        return actions.RAW_FUNCTIONS.no_op()
     
-    # REAPERS: Worker harass
+    # Determine target location for harassment
+    if target_x is not None and target_y is not None:
+        target = (int(target_x), int(target_y))
+    else:
+        # Fallback: enemy base
+        target = get_enemy_base_location(obs)
+    
+    enemies = get_enemy_units(obs)
+    action_list = []
+    
+    # REAPERS: Hit and run at target
     if reapers:
         for reaper in reapers:
-            if enemies:
-                target = min(enemies, key=lambda e: distance(reaper, e))
-                if reaper.energy >= 50:
-                    nearby = [e for e in enemies if distance(reaper, e) < 8]
-                    if len(nearby) >= 3:
-                        action_list.append(actions.RAW_FUNCTIONS.Effect_KD8Charge_screen("now", [reaper.tag], (int(target.x), int(target.y))))
-                        continue
-                action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [reaper.tag], (int(target.x), int(target.y))))
-            else:
-                action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [reaper.tag], enemy_base))
+            # Use KD8 grenade if enemies clustered near target
+            if reaper.energy >= 50:
+                enemies_at_target = [e for e in enemies if distance(target, (e.x, e.y)) < 8]
+                if len(enemies_at_target) >= 3:
+                    action_list.append(actions.RAW_FUNCTIONS.Effect_KD8Charge_pt("now", [reaper.tag], target))
+                    continue
+            
+            action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [reaper.tag], target))
     
-    # HELLIONS: Runbys
+    # HELLIONS: Runby to target
     if hellions:
         hellion_tags = [h.tag for h in hellions]
-        if enemies:
-            target = min(enemies, key=lambda e: distance(hellions[0], e))
-            action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", hellion_tags, (int(target.x), int(target.y))))
-        else:
-            action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", hellion_tags, enemy_base))
+        action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", hellion_tags, target))
     
-    # BANSHEES: Cloak and attack
+    # BANSHEES: Cloak and hit target
     if banshees:
         for banshee in banshees:
-            if banshee.energy >= 25 and enemies:
-                closest = min(enemies, key=lambda e: distance(banshee, e))
-                if distance(banshee, closest) < 15:
-                    action_list.append(actions.RAW_FUNCTIONS.Behavior_CloakOn_Banshee_quick("now", [banshee.tag]))
+            # Cloak when approaching enemies
+            enemies_near_target = [e for e in enemies if distance(target, (e.x, e.y)) < 15]
+            if banshee.energy >= 25 and enemies_near_target and distance(banshee, target) < 20:
+                action_list.append(actions.RAW_FUNCTIONS.Behavior_CloakOn_Banshee_quick("now", [banshee.tag]))
             
-            if enemies:
-                target = min(enemies, key=lambda e: distance(banshee, e))
-                action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [banshee.tag], (int(target.x), int(target.y))))
-            else:
-                action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [banshee.tag], enemy_base))
+            action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [banshee.tag], target))
     
-    # CYCLONES: Lock-on
+    # CYCLONES: Lock-on priority targets at target location
     if cyclones:
         for cyclone in cyclones:
-            if enemies:
-                target = min(enemies, key=lambda e: distance(cyclone, e))
-                if cyclone.energy >= 50 and distance(cyclone, target) <= 15:
-                    action_list.append(actions.RAW_FUNCTIONS.Effect_LockOn_screen("now", [cyclone.tag], (int(target.x), int(target.y))))
-                else:
-                    action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [cyclone.tag], (int(target.x), int(target.y))))
-            else:
-                action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [cyclone.tag], enemy_base))
+            enemies_at_target = [e for e in enemies if distance(target, (e.x, e.y)) < 15]
+            if cyclone.energy >= 50 and enemies_at_target:
+                lock_target = enemies_at_target[0]
+                if distance(cyclone, lock_target) <= 15:
+                    action_list.append(actions.RAW_FUNCTIONS.Effect_LockOn_unit("now", cyclone.tag, lock_target.tag))
+                    continue
+            
+            action_list.append(actions.RAW_FUNCTIONS.Attack_pt("now", [cyclone.tag], target))
     
     return action_list[0] if action_list else actions.RAW_FUNCTIONS.no_op()
 
 
 def retreat_to_base(obs, _x=None, _y=None):
     """
-    RETREAT: Fall back all units to nearest CC
+    RETREAT: Fall back ALL units to nearest CC.
+    Does NOT use coordinates - always goes home.
     """
     army = get_army_units(obs)
     if not army:
@@ -414,7 +439,8 @@ def retreat_to_base(obs, _x=None, _y=None):
 
 def final_push(obs, _x=None, _y=None):
     """
-    FINAL PUSH: All-in attack on enemy base
+    FINAL PUSH: All-in attack on enemy base.
+    Does NOT use coordinates - always goes to enemy.
     """
     army = get_army_units(obs)
     if not army:
@@ -517,7 +543,7 @@ ACTION_REGISTRY = {
     "research_armory": research_armory,
     "research_ghost_academy": research_ghost_academy,
     
-    # Combat - NEW STRATEGIC MACROS
+    # Combat - COORDINATE-BASED MACROS
     "attack_aggressor": attack_aggressor,
     "attack_siege": attack_siege,
     "attack_support": attack_support,
@@ -563,6 +589,14 @@ ACTION_NEEDS_COORDS = {
     "add_barracks_addon": False,
     "add_factory_addon": False,
     "add_starport_addon": False,
+    "add_barracks_techlab": False,
+    "add_barracks_reactor": False,
+    "add_factory_techlab": False,
+    "add_factory_reactor": False,
+    "add_starport_techlab": False,
+    "add_starport_reactor": False,
+    "build_techlab": False,
+    "build_reactor": False,
     
     # Building upgrades
     "upgrade_orbital_command": False,
@@ -603,11 +637,11 @@ ACTION_NEEDS_COORDS = {
     "research_armory": False,
     "research_ghost_academy": False,
     
-    # Combat - NEW (all False, they figure out targets themselves)
-    "attack_aggressor": False,
-    "attack_siege": False,
-    "attack_support": False,
-    "attack_harass": False,
-    "retreat_to_base": False,
-    "final_push": False,
+    # Combat - NOW USE COORDINATES (except retreat/final_push)
+    "attack_aggressor": True,
+    "attack_siege": True,
+    "attack_support": True,
+    "attack_harass": True,
+    "retreat_to_base": False,  # Always goes to closest CC
+    "final_push": False,       # Always goes to enemy base
 }

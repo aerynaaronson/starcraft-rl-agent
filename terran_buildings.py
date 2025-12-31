@@ -137,7 +137,7 @@ def build_barracks(obs, tile_x=None, tile_y=None):
     """Build a Barracks at specified or optimal location"""
     # HARD RESTRICTION: Reject coordinates outside radius 8 of any CC
     if tile_x is not None and tile_y is not None:
-        if not is_near_any_command_center(obs, tile_x, tile_y, max_radius=16):
+        if not is_near_any_command_center(obs, tile_x, tile_y, max_radius=12):
             return actions.RAW_FUNCTIONS.no_op()
     
     scvs = [u for u in obs.observation.raw_units
@@ -161,7 +161,7 @@ def build_factory(obs, tile_x=None, tile_y=None):
     """Build a Factory at specified or optimal location"""
     # HARD RESTRICTION: Reject coordinates outside radius 8 of any CC
     if tile_x is not None and tile_y is not None:
-        if not is_near_any_command_center(obs, tile_x, tile_y, max_radius=16):
+        if not is_near_any_command_center(obs, tile_x, tile_y, max_radius=12):
             return actions.RAW_FUNCTIONS.no_op()
     
     scvs = [u for u in obs.observation.raw_units
@@ -185,7 +185,7 @@ def build_starport(obs, tile_x=None, tile_y=None):
     """Build a Starport at specified or optimal location"""
     # HARD RESTRICTION: Reject coordinates outside radius 8 of any CC
     if tile_x is not None and tile_y is not None:
-        if not is_near_any_command_center(obs, tile_x, tile_y, max_radius=16):
+        if not is_near_any_command_center(obs, tile_x, tile_y, max_radius=12):
             return actions.RAW_FUNCTIONS.no_op()
     
     scvs = [u for u in obs.observation.raw_units
@@ -387,7 +387,7 @@ def build_sensor_tower(obs, tile_x, tile_y):
     """Build a Sensor Tower at specified location"""
     # HARD RESTRICTION: Reject coordinates outside radius 8 of any CC
     if tile_x is not None and tile_y is not None:
-        if not is_near_any_command_center(obs, tile_x, tile_y, max_radius=16):
+        if not is_near_any_command_center(obs, tile_x, tile_y, max_radius=32):
             return actions.RAW_FUNCTIONS.no_op()
     
     scvs = [u for u in obs.observation.raw_units
