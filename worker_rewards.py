@@ -59,12 +59,12 @@ class TieredRewardCalculator:
         """
         Calculate instantaneous reward for this step.
         Returns non-zero ONLY when a milestone is achieved for the first time.
-        
+
         Args:
             perception: GamePerception object
             action_name: Name of action taken
             obs: Raw observation
-            world_x, world_y: World coordinates for building placement (optional)
+            world_x, world_y: Unused (kept for backwards compatibility)
         """
         self.base_tracker.update_base_status(obs)
         current = self._extract_state(perception)
@@ -77,78 +77,20 @@ class TieredRewardCalculator:
             return 0.0
         
         reward = 0.0
-        
+
         if self.current_tier == 1:
             reward = self._tier1_instant(current, action_name, obs)
         elif self.current_tier == 2:
             reward = self._tier2_instant(current, action_name, perception)
         elif self.current_tier == 3:
             reward = self._tier3_instant(current, action_name, perception)
-        
-        # === PLACEMENT QUALITY REWARD ===
-        # Reward based on whether building coordinates are valid
-        if world_x is not None and world_y is not None:
-            placement_reward = self._evaluate_placement(action_name, obs, world_x, world_y)
-            reward += placement_reward
-        
+
+        # Building placement bonuses removed - milestone rewards only
+
         self.prev_state = current.copy()
         self.episode_instant_total += reward
-        
+
         return reward
-    
-    def _evaluate_placement(self, action_name, obs, world_x, world_y):
-        """
-        Evaluate building placement quality.
-        Returns positive reward for good placement, zero for bad.
-        No penalties - just no reward for invalid placements.
-        """
-        # Buildings that use coordinates
-        BUILDING_RADII = {
-            'build_supply_depot': 16,
-            'build_barracks': 12,
-            'build_factory': 12,
-            'build_starport': 12,
-            'build_bunker': 16,
-            'build_missile_turret': 16,
-            'build_sensor_tower': 32,
-            'build_engineering_bay': 12,
-            'build_armory': 12,
-            'build_ghost_academy': 12,
-            'build_fusion_core': 12,
-        }
-        
-        if action_name not in BUILDING_RADII:
-            return 0.0
-        
-        max_radius = BUILDING_RADII[action_name]
-        
-        # Find all command centers
-        from pysc2.lib import units, features
-        ccs = [u for u in obs.observation.raw_units
-               if u.alliance == features.PlayerRelative.SELF
-               and u.unit_type in (units.Terran.CommandCenter, 
-                                   units.Terran.OrbitalCommand,
-                                   units.Terran.PlanetaryFortress)]
-        
-        if not ccs:
-            return 0.0
-        
-        # Find distance to nearest CC
-        min_dist = float('inf')
-        for cc in ccs:
-            dist = np.sqrt((world_x - cc.x)**2 + (world_y - cc.y)**2)
-            min_dist = min(min_dist, dist)
-        
-        # Only reward valid placements (within radius)
-        # Scale: closer = better, but only if within valid range
-        if min_dist <= max_radius:
-            # Normalize: 1.0 at CC, 0.0 at edge of radius
-            closeness = 1.0 - (min_dist / max_radius)
-            # Small reward scaled by closeness (max 0.015 per valid placement)
-            return 0.005 + (closeness * 0.01)
-        else:
-            # Outside radius - no reward (action will fail anyway)
-            return 0.0
     
     def _tier1_instant(self, current, action_name, obs):
         """
